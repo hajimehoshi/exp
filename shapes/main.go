@@ -67,10 +67,11 @@ func colorAt(path *Path, x, y int) uint8 {
 	// This function emulates a fragment shader.
 
 	color := 0.0
-	for j := 0; j < 4; j++ {
+	const div = 4.0
+	for j := 0; j < div; j++ {
 		var intersections []float64
-		offset := float64(j) / 4.0
-		for yy := float64(y) + offset; yy < float64(y)+offset+0.25; yy += 1.0 / 256.0 {
+		offset := float64(j) / div
+		for yy := float64(y) + offset; yy < float64(y)+offset+(1.0/div); yy += 1.0 / 256.0 {
 			is, ok := path.Intersect(yy)
 			if !ok {
 				continue
@@ -90,16 +91,16 @@ func colorAt(path *Path, x, y int) uint8 {
 		val := 0.0
 		last := float64(x)
 		for len(intersections) > idx && float64(x+1) > intersections[idx] {
-			if idx % 2 != 0 {
+			if idx%2 != 0 {
 				val += intersections[idx] - last
 			}
 			last = intersections[idx]
 			idx++
 		}
-		if idx % 2 != 0 {
+		if idx%2 != 0 {
 			val += float64(x+1) - last
 		}
-		color += val / 4
+		color += val / div
 	}
 
 	return uint8(color * 255)
@@ -109,7 +110,7 @@ func (p *Path) appendPolygon(points ...PointF) {
 	if len(points) == 0 {
 		return
 	}
-	for i := 0; i < len(points) - 1; i++ {
+	for i := 0; i < len(points)-1; i++ {
 		p.intersecters = append(p.intersecters, &Line{points[i], points[i+1]})
 	}
 	p.intersecters = append(p.intersecters, &Line{points[len(points)-1], points[0]})
@@ -117,9 +118,9 @@ func (p *Path) appendPolygon(points ...PointF) {
 
 func (p *Path) appendRect(x, y, length float64) {
 	p0 := PointF{x, y}
-	p1 := PointF{x, y+1}
-	p2 := PointF{x+length, y+1}
-	p3 := PointF{x+length, y}
+	p1 := PointF{x, y + 1}
+	p2 := PointF{x + length, y + 1}
+	p3 := PointF{x + length, y}
 	p.intersecters = append(
 		p.intersecters,
 		&Line{p0, p1},
@@ -129,6 +130,8 @@ func (p *Path) appendRect(x, y, length float64) {
 	)
 }
 
+var count = 0
+
 func update(screen *ebiten.Image) error {
 	path := &Path{}
 	p0 := PointF{10, 20}
@@ -137,7 +140,7 @@ func update(screen *ebiten.Image) error {
 	p3 := PointF{30, 25}
 	path.appendPolygon(p0, p1, p2, p3)
 	path.appendRect(130, 30, 100)
-	path.appendRect(130.5, 40.5, 100)
+	path.appendRect(130.5, 40+float64(count)/15.0, 100)
 
 	for j := 0; j < screenHeight; j++ {
 		for i := 0; i < screenWidth; i++ {
@@ -150,6 +153,7 @@ func update(screen *ebiten.Image) error {
 		}
 	}
 
+	count++
 	if ebiten.IsRunningSlowly() {
 		return nil
 	}
