@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	screenWidth  = 640
-	screenHeight = 480
+	screenWidth  = 320
+	screenHeight = 240
 )
 
 type PointF struct {
@@ -45,12 +45,14 @@ type Intersecter interface {
 	Intersect(y float64) ([]float64, bool)
 }
 
-type Path []Intersecter
+type Path struct {
+	intersecters []Intersecter
+}
 
 func (p Path) Intersect(y float64) ([]float64, bool) {
 	r := []float64{}
-	for _, c := range p {
-		xs, ok := c.Intersect(y)
+	for _, i := range p.intersecters {
+		xs, ok := i.Intersect(y)
 		if !ok {
 			return nil, ok
 		}
@@ -61,7 +63,7 @@ func (p Path) Intersect(y float64) ([]float64, bool) {
 
 var offscreen = image.NewRGBA(image.Rect(0, 0, screenWidth, screenHeight))
 
-func colorAt(path Path, x, y int) uint8 {
+func colorAt(path *Path, x, y int) uint8 {
 	// This function emulates a fragment shader.
 
 	color := 0.0
@@ -103,17 +105,39 @@ func colorAt(path Path, x, y int) uint8 {
 	return uint8(color * 255)
 }
 
-func update(screen *ebiten.Image) error {
-	p0 := PointF{10, 20}
-	p1 := PointF{20, 30}
-	p2 := PointF{40, 35}
-	p3 := PointF{30, 25}
-	path := Path{
+func (p *Path) appendPolygon(points ...PointF) {
+	if len(points) == 0 {
+		return
+	}
+	for i := 0; i < len(points) - 1; i++ {
+		p.intersecters = append(p.intersecters, &Line{points[i], points[i+1]})
+	}
+	p.intersecters = append(p.intersecters, &Line{points[len(points)-1], points[0]})
+}
+
+func (p *Path) appendRect(x, y, length float64) {
+	p0 := PointF{x, y}
+	p1 := PointF{x, y+1}
+	p2 := PointF{x+length, y+1}
+	p3 := PointF{x+length, y}
+	p.intersecters = append(
+		p.intersecters,
 		&Line{p0, p1},
 		&Line{p1, p2},
 		&Line{p2, p3},
 		&Line{p3, p0},
-	}
+	)
+}
+
+func update(screen *ebiten.Image) error {
+	path := &Path{}
+	p0 := PointF{10, 20}
+	p1 := PointF{20, 30}
+	p2 := PointF{40, 35}
+	p3 := PointF{30, 25}
+	path.appendPolygon(p0, p1, p2, p3)
+	path.appendRect(130, 30, 100)
+	path.appendRect(130.5, 40.5, 100)
 
 	for j := 0; j < screenHeight; j++ {
 		for i := 0; i < screenWidth; i++ {
@@ -135,7 +159,7 @@ func update(screen *ebiten.Image) error {
 }
 
 func main() {
-	if err := ebiten.Run(update, screenWidth, screenHeight, 1, "Fill"); err != nil {
+	if err := ebiten.Run(update, screenWidth, screenHeight, 2, "Fill"); err != nil {
 		panic(err)
 	}
 }
