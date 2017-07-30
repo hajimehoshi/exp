@@ -20,39 +20,88 @@ type Line struct {
 	P1 PointF
 }
 
-func (l *Line) Cross(y float64) []float64 {
+func (l *Line) Intersect(y float64) ([]float64, bool) {
+	if l.P0.Y == y {
+		return nil, false
+	}
+	if l.P1.Y == y {
+		return nil, false
+	}
 	if l.P0.Y == l.P1.Y {
-		if l.P0.Y == y {
-			return []float64{l.P0.X}
-		}
-		return nil
+		return nil, true
 	}
-	if l.P0.Y < y && l.P1.Y <= y {
-		return nil
+	if l.P0.Y < y && l.P1.Y < y {
+		return nil, true
 	}
-	if l.P0.Y > y && l.P1.Y >= y {
-		return nil
+	if l.P0.Y > y && l.P1.Y > y {
+		return nil, true
 	}
 	m := (l.P1.X - l.P0.X) / (l.P1.Y - l.P0.Y)
 	x := m*(y-l.P0.Y) + l.P0.X
-	return []float64{x}
+	return []float64{x}, true
 }
 
-type Crosser interface {
-	Cross(y float64) []float64
+type Intersecter interface {
+	Intersect(y float64) ([]float64, bool)
 }
 
-type Path []Crosser
+type Path []Intersecter
 
-func (p Path) Cross(y float64) []float64 {
+func (p Path) Intersect(y float64) ([]float64, bool) {
 	r := []float64{}
 	for _, c := range p {
-		r = append(r, c.Cross(y)...)
+		xs, ok := c.Intersect(y)
+		if !ok {
+			return nil, ok
+		}
+		r = append(r, xs...)
 	}
-	return r
+	return r, true
 }
 
 var offscreen = image.NewRGBA(image.Rect(0, 0, screenWidth, screenHeight))
+
+func colorAt(path Path, x, y int) uint8 {
+	// This function emulates a fragment shader.
+
+	color := 0.0
+	for j := 0; j < 4; j++ {
+		var intersections []float64
+		offset := float64(j) / 4.0
+		for yy := float64(y) + offset; yy < float64(y)+offset+0.25; yy += 1.0 / 256.0 {
+			is, ok := path.Intersect(yy)
+			if !ok {
+				continue
+			}
+			intersections = is
+			break
+		}
+		if len(intersections) == 0 {
+			continue
+		}
+		idx := 0
+		for xx := 0; xx < x && len(intersections) > idx; xx++ {
+			for len(intersections) > idx && float64(xx+1) > intersections[idx] {
+				idx++
+			}
+		}
+		val := 0.0
+		last := float64(x)
+		for len(intersections) > idx && float64(x+1) > intersections[idx] {
+			if idx % 2 != 0 {
+				val += intersections[idx] - last
+			}
+			last = intersections[idx]
+			idx++
+		}
+		if idx % 2 != 0 {
+			val += float64(x+1) - last
+		}
+		color += val / 4
+	}
+
+	return uint8(color * 255)
+}
 
 func update(screen *ebiten.Image) error {
 	p0 := PointF{10, 20}
@@ -67,30 +116,13 @@ func update(screen *ebiten.Image) error {
 	}
 
 	for j := 0; j < screenHeight; j++ {
-		crossed := path.Cross(float64(j))
-		if len(crossed) == 0 {
-			continue
-		}
-		if len(crossed) % 2 == 1 {
-			crossed = crossed[:len(crossed)-1]
-		}
-		idx := 0
 		for i := 0; i < screenWidth; i++ {
-			for len(crossed) > idx && float64(i) >= crossed[idx] {
-				idx++
-			}
-			p := 4 * (j * screenWidth + i)
-			if idx % 2 == 1 {
-				offscreen.Pix[p] = 0xff
-				offscreen.Pix[p+1] = 0xff
-				offscreen.Pix[p+2] = 0xff
-				offscreen.Pix[p+3] = 0xff
-			} else {
-				offscreen.Pix[p] = 0
-				offscreen.Pix[p+1] = 0
-				offscreen.Pix[p+2] = 0
-				offscreen.Pix[p+3] = 0
-			}
+			c := colorAt(path, i, j)
+			p := 4 * (j*screenWidth + i)
+			offscreen.Pix[p] = c
+			offscreen.Pix[p+1] = c
+			offscreen.Pix[p+2] = c
+			offscreen.Pix[p+3] = c
 		}
 	}
 
