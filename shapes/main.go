@@ -2,6 +2,8 @@ package main
 
 import (
 	"image"
+	"math"
+	"sort"
 
 	"github.com/hajimehoshi/ebiten"
 )
@@ -41,12 +43,41 @@ func (l *Line) Intersect(y float64) ([]float64, bool) {
 	return []float64{x}, true
 }
 
+type Arc struct {
+	X          float64
+	Y          float64
+	Radius     float64
+	StartAngle float64
+	EndAngle   float64
+	//AntiClockwise bool
+}
+
+func (a *Arc) Intersect(y float64) ([]float64, bool) {
+	if a.Radius <= 0 {
+		return nil, true
+	}
+	if a.Y - a.Radius > y {
+		return nil, true
+	}
+	if a.Y + a.Radius < y {
+		return nil, true
+	}
+	t := math.Pow(a.Radius, 2) - math.Pow(y-a.Y, 2)
+	x0 := math.Sqrt(t) + a.X
+	x1 := -math.Sqrt(t) + a.X
+	if x0 == x1 {
+		return nil, false
+	}
+	return []float64{x0, x1}, true
+}
+
 type Intersecter interface {
 	Intersect(y float64) ([]float64, bool)
 }
 
 type Path struct {
 	intersecters []Intersecter
+	pos          PointF
 }
 
 func (p Path) Intersect(y float64) ([]float64, bool) {
@@ -82,6 +113,7 @@ func colorAt(path *Path, x, y int) uint8 {
 		if len(intersections) == 0 {
 			continue
 		}
+		sort.Float64s(intersections)
 		idx := 0
 		for xx := 0; xx < x && len(intersections) > idx; xx++ {
 			for len(intersections) > idx && float64(xx+1) > intersections[idx] {
@@ -106,17 +138,16 @@ func colorAt(path *Path, x, y int) uint8 {
 	return uint8(color * 255)
 }
 
-func (p *Path) appendPolygon(points ...PointF) {
-	if len(points) == 0 {
-		return
-	}
-	for i := 0; i < len(points)-1; i++ {
-		p.intersecters = append(p.intersecters, &Line{points[i], points[i+1]})
-	}
-	p.intersecters = append(p.intersecters, &Line{points[len(points)-1], points[0]})
+func (p *Path) moveTo(point PointF) {
+	p.pos = point
 }
 
-func (p *Path) appendRect(x, y, length float64) {
+func (p *Path) lineTo(point PointF) {
+	p.intersecters = append(p.intersecters, &Line{p.pos, point})
+	p.pos = point
+}
+
+func (p *Path) rect(x, y, length float64) {
 	p0 := PointF{x, y}
 	p1 := PointF{x, y + 1}
 	p2 := PointF{x + length, y + 1}
@@ -126,8 +157,17 @@ func (p *Path) appendRect(x, y, length float64) {
 		&Line{p0, p1},
 		&Line{p1, p2},
 		&Line{p2, p3},
-		&Line{p3, p0},
-	)
+		&Line{p3, p0})
+}
+
+func (p *Path) arc(x, y, radius float64) {
+	p.intersecters = append(
+		p.intersecters,
+		&Arc{
+			X:      x,
+			Y:      y,
+			Radius: radius,
+		})
 }
 
 var count = 0
@@ -138,9 +178,14 @@ func update(screen *ebiten.Image) error {
 	p1 := PointF{20, 30}
 	p2 := PointF{40, 35}
 	p3 := PointF{30, 25}
-	path.appendPolygon(p0, p1, p2, p3)
-	path.appendRect(130, 30, 100)
-	path.appendRect(130.5, 40+float64(count)/15.0, 100)
+	path.moveTo(p0)
+	for _, p := range []PointF{p0, p1, p2, p3, p0} {
+		path.lineTo(p)
+	}
+	path.rect(130, 30, 100)
+	path.rect(130.5, 40+float64(count)/15.0, 100)
+
+	path.arc(50, 50, 30)
 
 	for j := 0; j < screenHeight; j++ {
 		for i := 0; i < screenWidth; i++ {
